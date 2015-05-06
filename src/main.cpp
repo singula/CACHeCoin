@@ -476,9 +476,9 @@ bool CTransaction::CheckTransaction() const
         const CTxOut& txout = vout[i];
         if (txout.IsEmpty() && !IsCoinBase() && !IsCoinStake())
             return DoS(100, error("CTransaction::CheckTransaction() : txout empty for user transaction"));
-        // ppcoin: enforce minimum output amount
-        if ((!txout.IsEmpty()) && txout.nValue < MIN_TXOUT_AMOUNT)
-            return DoS(100, error("CTransaction::CheckTransaction() : txout.nValue below minimum"));
+//        // ppcoin: enforce minimum output amount
+//        if ((!txout.IsEmpty()) && txout.nValue < MIN_TXOUT_AMOUNT)
+//            return DoS(100, error("CTransaction::CheckTransaction() : txout.nValue below minimum"));
         if (txout.nValue > MAX_MONEY)
             return DoS(100, error("CTransaction::CheckTransaction() : txout.nValue too high"));
         nValueOut += txout.nValue;
@@ -1014,10 +1014,25 @@ int64 GetProofOfWorkReward(unsigned int nBits)
 
     int64 nSubsidy = bnUpperBound.getuint64();
     nSubsidy = (nSubsidy / CENT) * CENT;
+
+    // PoW ends at block 100k
+    int nSubsidyLimit = 100000;
+    nSubsidy = min(nSubsidy, MAX_MINT_PROOF_OF_WORK);
+
+    if (fTestNet)
+        nSubsidyLimit = 10000;
+
+    if (nBestHeight > nSubsidyLimit)
+    {
+        nSubsidy /= 1000000;
+        if (nSubsidy < 2)
+            nSubsidy = 1;
+    }
+
     if (fDebug && GetBoolArg("-printcreation"))
         printf("GetProofOfWorkReward() : create=%s nBits=0x%08x nSubsidy=%"PRI64d"\n", FormatMoney(nSubsidy).c_str(), nBits, nSubsidy);
 
-    return min(nSubsidy, MAX_MINT_PROOF_OF_WORK);
+    return nSubsidy;
 }
 
 // ppcoin: miner's coin stake is rewarded based on coin age spent (coin-days)
@@ -1033,8 +1048,21 @@ int64 GetProofOfStakeReward(int64 nCoinAge)
         else
             nSubsidy = nCoinAge * 33 / (365 * 33 + 8) * nRewardCoinYear;
 
+    // PoS ends at block 200k
+    int nSubsidyLimit = 200000;
+    if (fTestNet)
+        nSubsidyLimit = 20000;
+
+    if (nBestHeight > nSubsidyLimit)
+    {
+        nSubsidy /= 1000000;
+        if (nSubsidy < 2)
+            nSubsidy = 1;
+    }
+
     if (fDebug && GetBoolArg("-printcreation"))
         printf("GetProofOfStakeReward(): create=%s nCoinAge=%"PRI64d"\n", FormatMoney(nSubsidy).c_str(), nCoinAge);
+
     return nSubsidy;
 }
 
@@ -1981,7 +2009,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
     CBlockIndex* pindexNew = new CBlockIndex(nFile, nBlockPos, *this);
     if (!pindexNew)
         return error("AddToBlockIndex() : new CBlockIndex failed");
-    
+
     map<uint256, CBlockIndex*>::iterator miPrev = mapBlockIndex.find(hashPrevBlock);
     if (miPrev != mapBlockIndex.end())
     {
@@ -2018,7 +2046,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
     map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.insert(make_pair(hash, pindexNew)).first;
     if (pindexNew->IsProofOfStake())
         setStakeSeen.insert(make_pair(pindexNew->prevoutStake, pindexNew->nStakeTime));
-    
+
 
     // Write to disk block index
     CTxDB txdb;
